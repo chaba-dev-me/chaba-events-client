@@ -52,14 +52,18 @@ keep-alive, device filtering and reconnection-with-backoff. You write
 
 ## Getting an API key
 
-Events are filtered **per customer, server-side**: a key only ever
+Events are **filtered per customer, server-side**: a key only ever
 receives the devices of the farm it belongs to. Use your existing
 customer API key — the same 43-character key that authenticates the
 [Chaba REST API](https://docs.chaba.me). If you don't have one yet,
 message your Chaba agent ("give me an API key") or use the app's
 *Add API key* action.
 
-Treat the key like a password: anyone holding it can read your device
+The event stream is a **Pro-and-above subscription feature**: on a
+Free plan the server refuses the connection with close code 4005
+("requires a Pro or Unlimited subscription"); if a subscription
+lapses mid-stream, the server closes it within about a minute. Treat
+the key like a password: anyone holding it can read your device
 telemetry. Revoke and re-issue it if it leaks.
 
 ## The command-line client
@@ -134,10 +138,12 @@ Called for every device event on your account. The `event` dict:
 
 Two things worth knowing:
 
-1. **Events fire on change AND on heartbeat.** A device re-publishes
-   its state periodically even when nothing changed. If you want
-   *changes only*, keep the previous state in your subclass — see
-   [`examples/relay_change_log.py`](examples/relay_change_log.py).
+1. **Snapshot, then changes.** The server sends changes-only traffic:
+   the first message of a device is its current state (your
+   snapshot), after that only actual relay flips. Heartbeat repeats
+   and rssi/uptime drift never reach you — a quiet stream means
+   "nothing changed", and you no longer need to diff (the old
+   change-log pattern still works, it just rarely fires).
 2. **Keep `on_event` fast.** While it runs, later events queue up; if
    your handler is slow for long enough the server closes the
    connection (code 1013, "try again later") and the client
@@ -172,10 +178,15 @@ The connection ended. `code` is the WebSocket close code:
 | 4002 | malformed auth frame |
 | 4003 | invalid API key |
 | 4004 | not a customer key (agent/installer credentials can't subscribe) |
+| 4005 | **paywall**: the account is not on an active Pro/Unlimited plan — upgrade or renew |
 
 With `reconnect=True` a reconnect follows automatically — except for
-4002/4003/4004, which raise `AuthenticationError` and stop the
-client: a wrong key will never become right by retrying.
+4002/4003/4004/4005, which raise `AuthenticationError` and stop the
+client: a wrong key will never become right by retrying, and a
+paywalled account needs an upgrade/renewal first. (The server also
+re-checks open sessions about once a minute and closes lapsed ones
+with 4005 mid-stream; the client raises `AuthenticationError` then
+too.)
 
 #### `on_subscribed(self, devices: list) -> None`
 
@@ -257,11 +268,17 @@ any language can talk to the server directly:
 
    Empty list = all devices again. Acked with a `subscribed` frame.
 
-4. **Receive events** — one text frame per device state observation:
+4. **Receive events** — one text frame per device state *change*:
 
    ```json
    {"type": "event", "event": { ...as in on_event above... }}
    ```
+
+   Changes-only: the first message of a device carries its current
+   state (the connection's snapshot); afterwards only when
+   `relays_state` differs. Heartbeats and rssi/uptime drift are
+   suppressed server-side. Devices heartbeat at most ~60 s, so after
+   connecting you have every device's state within a minute.
 
 5. Application-level `{"type": "ping"}` → `{"type": "pong"}` is
    available; WebSocket protocol pings also run by default.
@@ -269,7 +286,9 @@ any language can talk to the server directly:
 Events are **live only** — there is no replay of history. If you need
 what happened while you were offline, read the REST API
 (`GET /api/v1/me/devices` embeds the current state) and treat the
-stream as "from now on".
+stream as "from now on". The server also re-validates open sessions
+(~1/min): a revoked key or a lapsed subscription closes the stream
+with the matching 4xxx code mid-flight.
 
 ## Running your client reliably
 

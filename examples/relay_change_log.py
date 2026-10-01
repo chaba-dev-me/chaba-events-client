@@ -1,9 +1,10 @@
 """Log relay CHANGES only: turn the event stream into a change feed.
 
-State events arrive on every change AND as a periodic heartbeat that
-repeats the current state. A consumer that wants "the pump started"
-rather than "the pump is on" must diff against the previous state —
-that memory lives in your subclass, exactly like here.
+The server already forwards changes-only traffic (one snapshot per
+device after connecting, then relay flips). This example still diffs
+locally — it is the defensive pattern for bridging an OLDER server
+without change detection, and shows how to keep per-device state in
+a subclass.
 
     python examples/relay_change_log.py ws://10.0.4.1:5000 KEY
 """

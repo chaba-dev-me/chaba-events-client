@@ -29,11 +29,12 @@ except ImportError as _exc:  # pragma: no cover - dependency is declared
 
 __all__ = ["AuthenticationError", "ChabaEventClient", "ConnectionClosedClean"]
 
-#: WebSocket close codes the server uses for authentication problems.
-#: A close with one of these codes is PERMANENT — the key is wrong, or
-#: it is not a customer key — and retrying will never help, so
+#: WebSocket close codes the server uses for authentication/authorisation
+#: problems. A close with one of these codes is PERMANENT — wrong key,
+#: not a customer key, or the account's subscription does not cover the
+#: event stream (upgrade/renewal is the fix, retrying is not) — so
 #: :meth:`ChabaEventClient.run_forever` stops instead of backing off.
-AUTH_CLOSE_CODES = {4001, 4002, 4003, 4004}
+AUTH_CLOSE_CODES = {4001, 4002, 4003, 4004, 4005}
 
 
 class AuthenticationError(Exception):
@@ -168,11 +169,12 @@ class ChabaEventClient:
                 ...                           # any extra firmware fields
             }
 
-        ``relays_state`` maps every relay to ``"on"``/``"off"``. A
-        state event is published on every change AND as a periodic
-        heartbeat, so an unchanged relay re-reports the same value —
-        if you want *changes* only, remember the previous state in
-        your subclass (see examples/relay_change_log.py).
+        ``relays_state`` maps every relay to ``"on"``/``"off"``. The
+        server sends changes-only traffic: the first message of a
+        device is its current state (your snapshot), after that only
+        actual relay flips — heartbeat repeats and rssi/uptime drift
+        are suppressed server-side, so a quiet stream means "nothing
+        changed".
 
         The default implementation prints the event as one JSON line
         to stdout, which is exactly what the command-line client

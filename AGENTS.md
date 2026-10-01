@@ -27,7 +27,10 @@ device re-reports its full state periodically, at most ~60 s apart).
    anything on the MikroTik's LAN) or wherever your operator exposes
    the event service. Plain `ws://`: the tunnel is the encryption
    layer.
-2. **A customer API key** (43 characters). This is the same key that
+2. **A customer API key on an active Pro or Unlimited subscription.**
+   The event stream is a Pro-and-above feature: a Free plan is
+   refused at connection (close code 4005) and a mid-stream lapse is
+   closed within about a minute. The key is the same one that
    authenticates the REST API. The customer creates/rotates/revokes
    it with their Chaba WhatsApp agent ("give me an API key",
    "rotate my iPad key"). Events are filtered server-side to the
@@ -114,11 +117,14 @@ All hooks are documented in
 
 ## Event semantics agents must know
 
-1. **Reports, not edges.** A device publishes on every relay change
-   AND as a periodic heartbeat repeating the unchanged state. If you
-   need *changes only*, keep the previous
-   `event["relays_state"]` per `device_uid` in your own state and
-   diff (see `examples/relay_change_log.py`).
+1. **Snapshot, then changes.** The first message of a device carries
+   its current `relays_state` (your snapshot); after that the server
+   forwards only actual relay flips. Heartbeat repeats and
+   rssi/uptime drift are suppressed server-side — silence means
+   "nothing changed", and you do NOT need to diff (older examples
+   that do so are harmless, just rarely needed). Devices report at
+   most ~60 s apart, so expect a full snapshot within a minute of
+   connecting.
 2. **`relays_state` covers every relay** (`{"relay_0": "on", ...}`),
    so one event is a full snapshot of that device's relays, not a
    delta.
@@ -126,12 +132,19 @@ All hooks are documented in
    UTC). Use it, not your local clock, when ordering across devices.
 4. **`rssi`/`uptime_s`** are WiFi signal (dBm) and uptime (seconds) —
    useful for "device went quiet / rebooted" heuristics: a falling
-   `uptime_s` means the device rebooted.
+   `uptime_s` means the device rebooted. Note these only refresh
+   when a relay flips (that is when the server forwards); for live
+   signal monitoring poll the REST API instead.
 5. **Close code 1013** means the consumer was too slow. The client
    reconnects automatically; events during the gap are lost —
    re-read the REST API state afterwards if exact continuity
    matters.
-6. **Filtering**: pass `devices=[uid, ...]` (constructor or
+6. **Close code 4005** means the account's subscription does not
+   cover the event stream (Free plan, or a lapsed renewal caught by
+   the server's mid-stream re-check). The client raises
+   `AuthenticationError` and stops — surface the upgrade/renewal to
+   the customer; retrying is pointless until they act.
+7. **Filtering**: pass `devices=[uid, ...]` (constructor or
    `subscribe()`) to receive only listed devices; `[]`/`None` = all.
    `on_subscribed` fires when the server confirmed the filter.
 
