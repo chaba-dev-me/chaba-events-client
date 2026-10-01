@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Packaging
+build/
+dist/
+*.egg-info/
+.venv/
+venv/
+
+# Local secrets — never commit a real API key
+.env

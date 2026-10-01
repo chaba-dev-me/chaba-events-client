@@ -1,0 +1,4 @@
+# Runtime dependencies for chaba-events-client.
+# Install with:  pip install -r requirements.txt
+# (or `pip install .`, which reads the same pin from pyproject.toml)
+websockets>=12
